@@ -29,7 +29,7 @@ export default function LoginScreen() {
       />
       
       <Pressable style={styles.button} onPress={() => router.replace("/(tabs)")}> 
-        <Text style={styles.buttonText}>Create Account</Text>
+        <Text style={styles.buttonText}>Sign In</Text>
       </Pressable>
       
       <Pressable onPress={() => router.replace("/register")}>
