@@ -35,6 +35,42 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="search"
+        options={{
+          title: 'Search',
+          tabBarIcon: ({ focused }) =>
+          <Ionicons
+              name={focused ? "search" : "search-outline"}
+              size={28}
+              color={focused ? Colors.light.tint : Colors.light.icon}
+          />
+        }}
+      />
+      <Tabs.Screen
+        name="add-post"
+        options={{
+          title: 'Add Post',
+          tabBarIcon: ({ focused }) =>
+          <Ionicons
+              name={focused ? "add" : "add-outline"}
+              size={28}
+              color={focused ? Colors.light.tint : Colors.light.icon}
+          />
+        }}
+      />
+      <Tabs.Screen
+        name="favorites"
+        options={{
+          title: 'My Profile',
+          tabBarIcon: ({ focused }) =>
+          <Ionicons
+              name={focused ? "heart" : "heart-outline"}
+              size={28}
+              color={focused ? Colors.light.tint : Colors.light.icon}
+          />
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'My Profile',
