@@ -26,7 +26,7 @@ interface ImageItem {
   caption: string;
 }
 
-export default function HomeTab() {
+export default function Page() {
   const [visibleCaption, setVisibleCaption] = useState<string | null>(null);
 
   const handleLongPress = (event: any, id: string) => {
