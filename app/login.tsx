@@ -1,5 +1,7 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, Image } from "react-native";
+import { View, Text, TextInput, Image, TouchableOpacity, StyleSheet, Alert } from "react-native";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "../firebaseConfig";
 import { useRouter } from "expo-router";
 
 export default function LoginScreen() {
@@ -7,11 +9,19 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
+  const handleLogin = async () => {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      router.replace("/(tabs)"); // Navigate to home tab
+    } catch (error: any) {
+      Alert.alert("Login Failed", error.message);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <Image source={require('@/assets/images/logo.png')} style={styles.logo} resizeMode="contain" />
       <Text style={styles.heading}>Login</Text>
-      
       <TextInput
         style={styles.input}
         placeholder="Email"
@@ -27,14 +37,12 @@ export default function LoginScreen() {
         onChangeText={setPassword}
         secureTextEntry
       />
-      
-      <Pressable style={styles.button} onPress={() => router.replace("/(tabs)")}> 
+      <TouchableOpacity style={styles.button} onPress={handleLogin}>
         <Text style={styles.buttonText}>Sign In</Text>
-      </Pressable>
-      
-      <Pressable onPress={() => router.replace("/register")}>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={() => router.replace("/register")}>
         <Text style={styles.linkText}>Create a new account</Text>
-      </Pressable>
+      </TouchableOpacity>
     </View>
   );
 }
