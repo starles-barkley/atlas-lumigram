@@ -12,6 +12,7 @@ import {
   collection,
   query,
   onSnapshot,
+  orderBy,
   doc,
   deleteField,
   updateDoc,
@@ -31,6 +32,7 @@ interface ImageItem {
   id: string;
   imageUrl: string;
   caption: string;
+  createdAt?: { seconds: number }; // ✅ Ensure Firestore timestamp compatibility
 }
 
 export default function Page() {
@@ -45,7 +47,13 @@ export default function Page() {
       if (docSnapshot.exists()) {
         const favoritesData = docSnapshot.data();
         const favoritesList = Object.values(favoritesData) as ImageItem[];
-        setFavorites(favoritesList);
+
+        // ✅ Sort by createdAt (newest first)
+        const sortedFavorites = favoritesList.sort(
+          (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
+        );
+
+        setFavorites(sortedFavorites);
       } else {
         setFavorites([]);
       }
@@ -74,6 +82,7 @@ export default function Page() {
         await updateDoc(userFavoritesRef, {
           [item.id]: deleteField(),
         });
+
         Alert.alert("Image Removed", "This image has been removed from your favorites.");
       } catch (error) {
         Alert.alert("Error", "Failed to remove the image. Please try again.");
@@ -92,7 +101,11 @@ export default function Page() {
         numberOfTaps={2}
       >
         <View style={styles.imageContainer}>
-          <Image source={{ uri: item.imageUrl }} style={styles.image} />
+          {item.imageUrl ? (
+            <Image source={{ uri: item.imageUrl }} style={styles.image} />
+          ) : (
+            <Text style={styles.errorText}>Image Not Found</Text>
+          )}
           {visibleCaption === item.id && (
             <View style={styles.captionContainer}>
               <Text style={styles.caption}>{item.caption}</Text>
@@ -145,5 +158,12 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 14,
     textAlign: "center",
+  },
+  errorText: {
+    color: "red",
+    fontSize: 16,
+    fontWeight: "bold",
+    textAlign: "center",
+    marginTop: 20,
   },
 });
