@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,7 +8,15 @@ import {
   Dimensions,
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
-import { favoritesFeed } from "../../placeholder";
+import {
+  collection,
+  query,
+  onSnapshot,
+  doc,
+  deleteField,
+  updateDoc,
+} from "firebase/firestore";
+import { auth, db } from "../../firebaseConfig";
 import {
   GestureHandlerRootView,
   TapGestureHandler,
@@ -21,29 +29,56 @@ const { width, height } = Dimensions.get("window");
 
 interface ImageItem {
   id: string;
-  image: string;
+  imageUrl: string;
   caption: string;
 }
 
 export default function Page() {
   const [visibleCaption, setVisibleCaption] = useState<string | null>(null);
+  const [favorites, setFavorites] = useState<ImageItem[]>([]);
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+
+    const userFavoritesRef = doc(db, "favorites", auth.currentUser.uid);
+    const unsubscribe = onSnapshot(userFavoritesRef, (docSnapshot) => {
+      if (docSnapshot.exists()) {
+        const favoritesData = docSnapshot.data();
+        const favoritesList = Object.values(favoritesData) as ImageItem[];
+        setFavorites(favoritesList);
+      } else {
+        setFavorites([]);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const handleLongPress = (event: any, id: string) => {
     if (event.nativeEvent.state === State.ACTIVE) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      console.log("Long Press Activated for ID:", id);
       setVisibleCaption(id);
-      console.log("Updated visibleCaption:", id);
-      setTimeout(() => {
-        console.log("Caption cleared for ID:", id);
-        setVisibleCaption(null);
-      }, 2000);
+      setTimeout(() => setVisibleCaption(null), 2000);
     }
   };
 
-  const handleDoubleTap = (event: any) => {
+  const handleDoubleTap = async (event: any, item: ImageItem) => {
     if (event.nativeEvent.state === State.ACTIVE) {
-      Alert.alert("Image Removed", "This image has been removed from your favorites.");
+      if (!auth.currentUser) {
+        Alert.alert("Error", "You need to be logged in to remove favorites.");
+        return;
+      }
+
+      try {
+        const userFavoritesRef = doc(db, "favorites", auth.currentUser.uid);
+        await updateDoc(userFavoritesRef, {
+          [item.id]: deleteField(),
+        });
+        Alert.alert("Image Removed", "This image has been removed from your favorites.");
+      } catch (error) {
+        Alert.alert("Error", "Failed to remove the image. Please try again.");
+        console.error("Error removing favorite image:", error);
+      }
     }
   };
 
@@ -53,11 +88,11 @@ export default function Page() {
       minDurationMs={500}
     >
       <TapGestureHandler
-        onHandlerStateChange={handleDoubleTap}
+        onHandlerStateChange={(event) => handleDoubleTap(event, item)}
         numberOfTaps={2}
       >
         <View style={styles.imageContainer}>
-          <Image source={{ uri: item.image }} style={styles.image} />
+          <Image source={{ uri: item.imageUrl }} style={styles.image} />
           {visibleCaption === item.id && (
             <View style={styles.captionContainer}>
               <Text style={styles.caption}>{item.caption}</Text>
@@ -71,7 +106,7 @@ export default function Page() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <FlashList
-        data={favoritesFeed}
+        data={favorites}
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
         estimatedItemSize={height * 0.5}

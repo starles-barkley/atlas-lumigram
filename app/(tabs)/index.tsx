@@ -17,10 +17,12 @@ import {
   startAfter,
   getDocs,
   onSnapshot,
+  doc,
+  setDoc,
   QueryDocumentSnapshot,
   DocumentData,
 } from "firebase/firestore";
-import { db } from "../../firebaseConfig";
+import { auth, db } from "../../firebaseConfig";
 import {
   GestureHandlerRootView,
   TapGestureHandler,
@@ -103,9 +105,24 @@ export default function Page() {
     }
   };
 
-  const handleDoubleTap = (event: any) => {
+  const handleDoubleTap = async (event: any, item: ImageItem) => {
     if (event.nativeEvent.state === State.ACTIVE) {
-      Alert.alert("Image Favorited", "This image has been added to your favorites.");
+      if (!auth.currentUser) {
+        Alert.alert("Error", "You need to be logged in to favorite images.");
+        return;
+      }
+
+      try {
+        const userFavoritesRef = doc(db, "favorites", auth.currentUser.uid);
+        await setDoc(userFavoritesRef, {
+          [item.id]: item,
+        }, { merge: true });
+
+        Alert.alert("Image Favorited", "This image has been added to your favorites.");
+      } catch (error) {
+        Alert.alert("Error", "Failed to favorite the image. Please try again.");
+        console.error("Error favoriting image:", error);
+      }
     }
   };
 
@@ -115,7 +132,7 @@ export default function Page() {
       minDurationMs={500}
     >
       <TapGestureHandler
-        onHandlerStateChange={handleDoubleTap}
+        onHandlerStateChange={(event) => handleDoubleTap(event, item)}
         numberOfTaps={2}
       >
         <View style={styles.imageContainer}>
