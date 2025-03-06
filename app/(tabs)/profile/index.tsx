@@ -3,14 +3,25 @@ import {
   View,
   Text,
   Image,
-  StyleSheet,
+  TextInput,
   TouchableOpacity,
-  FlatList,
+  StyleSheet,
+  ActivityIndicator,
   Dimensions,
 } from "react-native";
-import { useRouter } from "expo-router";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { FlashList } from "@shopify/flash-list";
+import {
+  doc,
+  getDoc,
+  setDoc,
+  collection,
+  query,
+  where,
+  onSnapshot,
+} from "firebase/firestore";
 import { auth, db } from "../../../firebaseConfig";
+import { useRouter } from "expo-router";
+import * as ImagePicker from "expo-image-picker";
 
 const { width } = Dimensions.get("window");
 
@@ -18,28 +29,37 @@ export default function ProfilePage() {
   const router = useRouter();
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [username, setUsername] = useState<string | null>(null);
+  const [newUsername, setNewUsername] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [userPosts, setUserPosts] = useState<any[]>([]);
+
+  useEffect(() => {
+    async function fetchUserProfile() {
+      if (!auth.currentUser) return;
+
+      const userRef = doc(db, "users", auth.currentUser.uid);
+      const userSnap = await getDoc(userRef);
+
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        setUsername(userData.username || "");
+        setProfileImage(userData.profileImage || null);
+      }
+      setLoading(false);
+    }
+
+    fetchUserProfile();
+  }, []);
 
   useEffect(() => {
     if (!auth.currentUser) return;
 
-    // Get user profile info
-    const userRef = collection(db, "users");
-    const userQuery = query(userRef, where("uid", "==", auth.currentUser.uid));
-
-    const unsubscribeUser = onSnapshot(userQuery, (snapshot) => {
-      if (!snapshot.empty) {
-        const userData = snapshot.docs[0].data();
-        setUsername(userData.username || "No Username");
-        setProfileImage(userData.profileImage || null);
-      }
-    });
-
-    // Get user posts
     const postsRef = collection(db, "posts");
-    const postsQuery = query(postsRef, where("userId", "==", auth.currentUser.uid));
+    const postsQuery = query(postsRef, where("createdBy", "==", auth.currentUser.uid));
 
-    const unsubscribePosts = onSnapshot(postsQuery, (snapshot) => {
+    const unsubscribe = onSnapshot(postsQuery, (snapshot) => {
       const posts = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
@@ -47,16 +67,46 @@ export default function ProfilePage() {
       setUserPosts(posts);
     });
 
-    return () => {
-      unsubscribeUser();
-      unsubscribePosts();
-    };
+    return () => unsubscribe();
   }, []);
+
+  const handleSaveUsername = async () => {
+    if (!auth.currentUser || newUsername.trim() === "") return;
+
+    setSaving(true);
+    const userRef = doc(db, "users", auth.currentUser.uid);
+    await setDoc(userRef, { username: newUsername }, { merge: true });
+
+    setUsername(newUsername);
+    setIsEditing(false);
+    setSaving(false);
+  };
+
+  const handlePickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      setProfileImage(result.assets[0].uri);
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator size="large" color="#1ED2AF" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      {/* Profile Info */}
-      <TouchableOpacity onPress={() => router.push("/profile/edit")}>
+      {/* Profile Image (Clickable for Edit) */}
+      <TouchableOpacity onPress={handlePickImage}>
         <Image
           source={
             profileImage
@@ -66,25 +116,49 @@ export default function ProfilePage() {
           style={styles.profileImage}
         />
       </TouchableOpacity>
-      <Text style={styles.username}>{username || "Loading..."}</Text>
 
-      {/* User Posts Grid */}
-      <FlatList
-        data={userPosts}
-        keyExtractor={(item) => item.id}
-        numColumns={3}
-        renderItem={({ item }) => (
-          <Image source={{ uri: item.imageUrl }} style={styles.postImage} />
-        )}
-        contentContainerStyle={styles.gridContainer}
-      />
+      {/* Username Display & Edit */}
+      {isEditing ? (
+        <View style={styles.usernameContainer}>
+          <TextInput
+            style={styles.usernameInput}
+            value={newUsername}
+            onChangeText={setNewUsername}
+            placeholder="Enter username"
+            autoFocus
+          />
+          <TouchableOpacity onPress={handleSaveUsername} style={styles.saveButton}>
+            {saving ? <ActivityIndicator size="small" color="white" /> : <Text style={styles.saveButtonText}>Save</Text>}
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <TouchableOpacity onPress={() => setIsEditing(true)}>
+          <Text style={styles.username}>{username || "Set Username"}</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* User Posts Grid - Ensure FlashList Parent has flex: 1 */}
+      <View style={styles.postsContainer}>
+        <FlashList
+          data={userPosts}
+          renderItem={({ item }) => (
+            <View style={styles.postContainer}>
+              <Image source={{ uri: item.imageUrl }} style={styles.postImage} />
+            </View>
+          )}
+          keyExtractor={(item) => item.id}
+          estimatedItemSize={width / 3} // Ensures correct layout estimation
+          numColumns={3} // Enforce three columns
+          contentContainerStyle={{ paddingBottom: 20 }} // Ensure padding at bottom
+        />
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flex: 1, // ✅ FIX: Ensures parent container has height
     alignItems: "center",
     paddingTop: 20,
     backgroundColor: "white",
@@ -95,18 +169,48 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     marginBottom: 10,
   },
+  usernameContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  usernameInput: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#1ED2AF",
+    padding: 5,
+    width: 150,
+    fontSize: 16,
+    marginRight: 10,
+  },
+  saveButton: {
+    backgroundColor: "#1ED2AF",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 5,
+  },
+  saveButtonText: {
+    color: "white",
+    fontSize: 14,
+  },
   username: {
     fontSize: 18,
     fontWeight: "bold",
     marginBottom: 20,
   },
-  gridContainer: {
+  postsContainer: {
+    flex: 1,
+    width: "100%",
     paddingHorizontal: 5,
   },
+  postContainer: {
+    width: width / 3 - 6,
+    height: width / 3 - 6,
+    margin: 3,
+    overflow: "hidden",
+  },
   postImage: {
-    width: width / 3 - 10,
-    height: width / 3 - 10,
-    margin: 5,
+    width: "100%",
+    height: "100%",
     borderRadius: 5,
+    resizeMode: "cover",
   },
 });
