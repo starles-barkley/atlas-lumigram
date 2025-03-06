@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -6,13 +6,19 @@ import {
   Alert,
   StyleSheet,
   Dimensions,
+  RefreshControl,
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import {
   collection,
   query,
   orderBy,
+  limit,
+  startAfter,
+  getDocs,
   onSnapshot,
+  QueryDocumentSnapshot,
+  DocumentData,
 } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
 import {
@@ -24,6 +30,7 @@ import {
 import * as Haptics from "expo-haptics";
 
 const { width, height } = Dimensions.get("window");
+const PAGE_SIZE = 5;
 
 interface ImageItem {
   id: string;
@@ -34,29 +41,65 @@ interface ImageItem {
 export default function Page() {
   const [visibleCaption, setVisibleCaption] = useState<string | null>(null);
   const [posts, setPosts] = useState<ImageItem[]>([]);
+  const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+  const fetchPosts = async (loadMore = false) => {
+    if (loading) return;
+    setLoading(true);
+
+    try {
+      let q = query(
+        collection(db, "posts"),
+        orderBy("createdAt", "desc"),
+        limit(PAGE_SIZE)
+      );
+      
+      if (loadMore && lastVisible) {
+        q = query(
+          collection(db, "posts"),
+          orderBy("createdAt", "desc"),
+          startAfter(lastVisible),
+          limit(PAGE_SIZE)
+        );
+      }
+
+      const snapshot = await getDocs(q);
       const newPosts = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       })) as ImageItem[];
-      setPosts(newPosts);
-    });
-    return () => unsubscribe();
+
+      setPosts((prevPosts) => loadMore ? [...prevPosts, ...newPosts] : newPosts);
+      setLastVisible(snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null);
+    } catch (error) {
+      console.error("Error fetching posts:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPosts();
   }, []);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchPosts().then(() => setRefreshing(false));
+  }, []);
+
+  const handleLoadMore = () => {
+    if (lastVisible) {
+      fetchPosts(true);
+    }
+  };
 
   const handleLongPress = (event: any, id: string) => {
     if (event.nativeEvent.state === State.ACTIVE) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      console.log("Long Press Activated for ID:", id);
       setVisibleCaption(id);
-      console.log("Updated visibleCaption:", id);
-      setTimeout(() => {
-        console.log("Caption cleared for ID:", id);
-        setVisibleCaption(null);
-      }, 2000);
+      setTimeout(() => setVisibleCaption(null), 2000);
     }
   };
 
@@ -95,6 +138,9 @@ export default function Page() {
         keyExtractor={(item) => item.id}
         estimatedItemSize={height * 0.5}
         extraData={visibleCaption}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       />
     </GestureHandlerRootView>
   );
