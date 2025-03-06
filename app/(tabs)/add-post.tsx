@@ -3,12 +3,20 @@ import { View, StyleSheet, Image, TextInput, ActivityIndicator, Alert, Touchable
 import { useImagePicker } from "../../hooks/useImagePicker";
 import { MaterialIcons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { getFirestore, collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { auth } from "../../firebaseConfig";
+import { useRouter } from "expo-router";
+
+const storage = getStorage();
+const db = getFirestore();
 
 export default function Page() {
   const [caption, setCaption] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const { image, openImagePicker, reset } = useImagePicker();
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     (async () => {
@@ -29,7 +37,20 @@ export default function Page() {
     })();
   }, []);
 
-  const handleAddPost = () => {
+  const uploadImage = async (uri: string) => {
+    try {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      const storageRef = ref(storage, `posts/${auth.currentUser?.uid}/${Date.now()}`);
+      await uploadBytes(storageRef, blob);
+      return await getDownloadURL(storageRef);
+    } catch (error) {
+      console.error("Image upload failed:", error);
+      throw error;
+    }
+  };
+
+  const handleAddPost = async () => {
     if (!image) {
       Alert.alert("Error", "Please select an image before posting.");
       return;
@@ -38,14 +59,33 @@ export default function Page() {
       Alert.alert("Error", "Please enter a caption before posting.");
       return;
     }
+  
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const imageUrl = await uploadImage(image);
+      await addDoc(collection(db, "posts"), {
+        imageUrl,
+        caption,
+        createdAt: serverTimestamp(),
+        createdBy: auth.currentUser?.uid,
+      });
+  
+      Alert.alert("Success", "Your post has been added.", [
+        {
+          text: "OK",
+          onPress: () => {
+            setLoading(false);
+            reset(); // Reset image picker
+            setCaption(""); // Clear caption
+            router.replace("/(tabs)"); // Navigate to home tab
+          },
+        },
+      ]);
+    } catch (error) {
       setLoading(false);
-      Alert.alert("Success", "Your post has been added.");
-      reset();
-      setCaption("");
-    }, 2000);
-  };
+      Alert.alert("Upload Failed", "There was an error uploading your post.");
+    }
+  };  
 
   return (
     <View style={styles.container}>
@@ -72,8 +112,8 @@ export default function Page() {
             onChangeText={setCaption}
             placeholderTextColor="#888"
           />
-          <TouchableOpacity style={styles.saveButton} onPress={handleAddPost}>
-            <Text style={styles.buttonText}>Save</Text>
+          <TouchableOpacity style={styles.saveButton} onPress={handleAddPost} disabled={loading}>
+            <Text style={styles.buttonText}>{loading ? "Uploading..." : "Save Post"}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.resetButton} onPress={reset}>
             <Text style={styles.resetText}>Reset</Text>

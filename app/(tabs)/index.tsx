@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,7 +8,13 @@ import {
   Dimensions,
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
-import { homeFeed } from "../../placeholder";
+import {
+  collection,
+  query,
+  orderBy,
+  onSnapshot,
+} from "firebase/firestore";
+import { db } from "../../firebaseConfig";
 import {
   GestureHandlerRootView,
   TapGestureHandler,
@@ -17,17 +23,29 @@ import {
 } from "react-native-gesture-handler";
 import * as Haptics from "expo-haptics";
 
-
 const { width, height } = Dimensions.get("window");
 
 interface ImageItem {
   id: string;
-  image: string;
+  imageUrl: string;
   caption: string;
 }
 
 export default function Page() {
   const [visibleCaption, setVisibleCaption] = useState<string | null>(null);
+  const [posts, setPosts] = useState<ImageItem[]>([]);
+
+  useEffect(() => {
+    const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const newPosts = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as ImageItem[];
+      setPosts(newPosts);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const handleLongPress = (event: any, id: string) => {
     if (event.nativeEvent.state === State.ACTIVE) {
@@ -40,7 +58,7 @@ export default function Page() {
         setVisibleCaption(null);
       }, 2000);
     }
-  };  
+  };
 
   const handleDoubleTap = (event: any) => {
     if (event.nativeEvent.state === State.ACTIVE) {
@@ -58,7 +76,7 @@ export default function Page() {
         numberOfTaps={2}
       >
         <View style={styles.imageContainer}>
-          <Image source={{ uri: item.image }} style={styles.image} />
+          <Image source={{ uri: item.imageUrl }} style={styles.image} />
           {visibleCaption === item.id && (
             <View style={styles.captionContainer}>
               <Text style={styles.caption}>{item.caption}</Text>
@@ -72,13 +90,12 @@ export default function Page() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <FlashList
-        data={homeFeed}
+        data={posts}
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
         estimatedItemSize={height * 0.5}
         extraData={visibleCaption}
       />
-
     </GestureHandlerRootView>
   );
 }
